@@ -1,0 +1,6 @@
+weights/
+data/
+catboost_info/
+results/
+.ipynb_checkpoints/
+*.swp

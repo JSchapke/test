@@ -1,0 +1,27 @@
+name: lightgbm0
+algo: lightgbm
+weights_path: ./weights/lightgbm0.pkl
+
+# Eval Mae: 290ish 
+model_params:
+    boosting_type: gbdt
+    num_leaves: 50
+    max_depth: -1
+    learning_rate: 0.2
+    n_estimators: 200
+    objective: MAE
+
+hyper_search:
+    num_leaves: [int, 2, 31]
+    n_estimators: [int, 50, 300]
+    max_depth: [int, 3, 8]
+    min_child_samples: [float, 100, 1200]
+    learning_rate: [float, 0.0001, 0.99]
+    min_data_in_leaf: [int, 5, 90]
+    bagging_fraction: [float, 0.0001, 1.0]
+    feature_fraction: [float, 0.0001, 1.0]
+
+data:
+    ips_file: ./data/OxCGRT_latest.csv
+    nb_lookback_days: 1
+    y: NewCasesRM

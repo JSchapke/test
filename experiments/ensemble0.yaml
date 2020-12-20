@@ -1,0 +1,28 @@
+algo: ensemble
+weights_path: ./weights/ensemble0.yaml
+
+model_params:
+    lightgbm0:
+        algo: lightgbm
+        model_params:
+            boosting_type: 'gbdt'
+            num_leaves: 31
+            max_depth: -1
+            learning_rate: 0.1
+            n_estimators: 100
+            subsample_for_bin: 200000
+            objective: MAE
+
+    catboost0:
+        algo: catboost
+        model_params:
+            iterations: 1000
+            learning_rate: 0.1
+            depth: 6
+            reg_lambda: 3.0
+            loss_function: MAE
+
+data:
+    ips_file: ./data/OxCGRT_latest.csv
+    nb_lookback_days: 1
+    y: NewCasesRM

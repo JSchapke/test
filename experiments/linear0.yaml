@@ -1,0 +1,7 @@
+algo: linear
+weights_path: ./weights/linear0.yaml
+
+eval: True
+
+data:
+    ips_file: ./data/OxCGRT_latest.csv

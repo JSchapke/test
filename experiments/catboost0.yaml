@@ -1,0 +1,21 @@
+name: catboost0
+algo: catboost
+weights_path: ./weights/catboost0.yaml
+
+# Test MAE: 400ish
+model_params:
+    loss_function: MAE
+    iterations: 3000 
+    learning_rate: 0.03780124781473174
+    depth: 8
+    reg_lambda: 3.0
+
+hyper_search:
+    iterations: [int, 200, 1_000]
+    learning_rate: [float, 0.005, 0.99]
+    depth: [int, 3, 8]
+
+data:
+    ips_file: ./data/OxCGRT_latest.csv
+    nb_lookback_days: 1
+    y: NewCasesRM
