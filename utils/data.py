@@ -31,22 +31,82 @@ WINDOW_NEW_CASES = 14
 WINDOW_ACC_CASES = 14
 WINDOW_GRO_CASES = 14
 
+REMOVED_REGIONS = [
+    'Brazil__Acre',
+    'Brazil__Alagoas',
+    'Brazil__Amapa',
+    'Brazil__Amazonas',
+    'Brazil__Bahia',
+    'Brazil__Ceara',
+    'Brazil__Distrito Federal',
+    'Brazil__Espirito Santo',
+    'Brazil__Goias',
+    'Brazil__Maranhao',
+    'Brazil__Mato Grosso',
+    'Brazil__Mato Grosso do Sul',
+    'Brazil__Minas Gerais',
+    'Brazil__Para',
+    'Brazil__Paraiba',
+    'Brazil__Parana',
+    'Brazil__Pernambuco',
+    'Brazil__Piaui',
+    'Brazil__Rio Grande do Norte',
+    'Brazil__Rio Grande do Sul',
+    'Brazil__Rio de Janeiro',
+    'Brazil__Rondonia',
+    'Brazil__Roraima',
+    'Brazil__Santa Catarina',
+    'Brazil__Sao Paulo',
+    'Brazil__Sergipe',
+    'Brazil__Tocantins',
+    'Turkmenistan__nan',
+    'United States Virgin Islands__nan']
+
+
+def set_df_index(df):
+    # Add GeoID column that combines CountryName and RegionName for easier manipulation of data
+    df['GeoID'] = df.CountryName + '__' + df.RegionName.astype(str)
+    df = df[~df.GeoID.isin(REMOVED_REGIONS)]
+    df = df.set_index(['Date', 'GeoID'])
+    return df
+
 
 class Data:
-    def __init__(self, config, df=None):
+    def __init__(self, config, data=None, ips=None):
         self.config = config
 
-        if df is None:
-            IPS_PATH = './data/OxCGRT_latest.csv'
-            df = pd.read_csv(IPS_PATH,
-                             parse_dates=['Date'],
-                             encoding="ISO-8859-1",
-                             dtype={"RegionName": str},
-                             error_bad_lines=True)
+        if data is None:
+            data = pd.read_csv('./data/OxCGRT_latest.csv',
+                               parse_dates=['Date'],
+                               encoding="ISO-8859-1",
+                               dtype={"RegionName": str},
+                               error_bad_lines=True)
 
+        if ips is None:
+            ips = pd.read_csv('./data/ips_20201221.csv',
+                              parse_dates=['Date'],
+                              encoding="ISO-8859-1",
+                              dtype={"RegionName": str},
+                              error_bad_lines=True)
+
+        data = data[['CountryName', 'RegionName',
+                     'Jurisdiction', 'Date', 'E1_Income support',
+                     'E2_Debt/contract relief', 'E3_Fiscal measures', 'E4_International support',
+                     'H4_Emergency investment in healthcare', 'H5_Investment in vaccines',
+                     'M1_Wildcard', 'ConfirmedCases', 'ConfirmedDeaths', 'StringencyIndex',
+                     'StringencyLegacyIndex', 'GovernmentResponseIndex',
+                     'ContainmentHealthIndex', 'EconomicSupportIndex', ]].copy()
+        data = set_df_index(data)
+        ips = set_df_index(ips)
+        ips = ips.drop(columns=['CountryName', 'RegionName'])
+        self.ips = ips
+
+        df = data.join(ips, how='outer')
+        df = df.reset_index()
         df = process_df(df)
         df = df.set_index(["Date", "GeoID"])
         self.df = df.sort_index()
+        self.last_known_date = data.reset_index().Date.max()
 
     def build_train(self):
         """
@@ -76,18 +136,17 @@ class Data:
         return X, y, info
 
     def build_test_iter(self, fore_date, n_fore):
-        forecasts = []
         df = self.df.copy()
+        forecasts = []
 
-        def iterator(forecast=None):
-            #day = pd.Timedelta(days=1)
+        def iterator(forecast=None, test=False):
+            # day = pd.Timedelta(days=1)
             if n_fore > len(forecasts):
 
                 if forecast is not None:
                     # Parse forecast
                     forecasts.append(forecast)
                     date = fore_date + pd.Timedelta(days=len(forecasts))
-                    print(df.loc[date])
                     self.update_df(df, forecast, date)
 
                 date = fore_date + pd.Timedelta(days=len(forecasts))
@@ -95,10 +154,13 @@ class Data:
                     df.loc[date-pd.Timedelta(days=MAX_LOOK_BACK):date].copy())
                 return X
 
-            fore = np.array(forecasts).T
-            regions = df.loc[fore_date].index
             dates = pd.date_range(fore_date, periods=n_fore, freq='1d')
-            fore = pd.DataFrame(fore, index=regions, columns=dates)
+            if test:
+                fore = df.loc[dates].reset_index()[[
+                    "CountryName", "RegionName", "Date"]]
+                fore["PredictedDailyNewCases"] = df.loc[dates].NewCasesRM.values
+            else:
+                fore = df.loc[dates, "NewCasesRM"]
             return fore
 
         return iterator
@@ -111,16 +173,15 @@ class Data:
             df.loc[date, "NewCasesRM"] = forecast
             prev_new_cases = df.NewCasesRM.loc[date-day].values
             df.loc[date, "AccCases"] = forecast - prev_new_cases
-            df.loc[date, "AccCasesRM"] = df.AccCases.loc[
-                date - day*WINDOW_ACC_CASES:date].mean()
+            df.loc[date, "AccCasesRM"] = df.AccCases.loc[date -
+                                                         day*WINDOW_ACC_CASES: date].mean()
             df.loc[date, "NewCasesRMGrowth"] = forecast / prev_new_cases
-            df.loc[date, "NewCasesRMGrowthRM"] = df.NewCasesRMGrowth.loc[
-                date - day*WINDOW_GRO_CASES:date].mean()
+            df.loc[date, "NewCasesRMGrowthRM"] = df.NewCasesRMGrowth.loc[date -
+                                                                         day*WINDOW_GRO_CASES: date].mean()
 
         elif y == "AccCasesRM":
-            acc = forecast - \
-                df.AccCasesRM[date - day].values + \
-                df.AccCases[date-(WINDOW_ACC_CASES-1)*day] / WINDOW_ACC_CASES
+            acc = forecast - df.AccCasesRM[date - day].values + df.AccCases[
+                date-(WINDOW_ACC_CASES-1)*day] / WINDOW_ACC_CASES
             acc = acc.values * WINDOW_ACC_CASES
             prev_vel = df.NewCasesRM.loc[date-day].values
             vel = df.NewCasesRM.loc[date-day].values + acc
@@ -131,13 +192,8 @@ class Data:
 
             df.loc[date, "NewCasesRMGrowth"] = vel / prev_vel
             df.loc[date, "NewCasesRMGrowthRM"] = df.NewCasesRMGrowth.loc[
-                date - day*WINDOW_GRO_CASES:date].mean()
+                date - day*WINDOW_GRO_CASES: date].mean()
 
-#            print('= '*20)
-#            print('vel:,', vel[:5])
-#            print(df.loc[date])
-#            print('- '*20)
-#            ask
             if np.any(np.isnan(prev_vel)) or np.any(np.isnan(vel)):
                 ask
 
@@ -151,9 +207,6 @@ def process_df(df):
     Output: out_df
     """
     df = df.copy()
-
-    # Add GeoID column that combines CountryName and RegionName for easier manipulation of data
-    df['GeoID'] = df['CountryName'] + '__' + df['RegionName'].astype(str)
 
     print('Warning! Interpolating missing ConfirmedCases statistics. (This will affect the ground truth labels NewCases).')
     df.update(df.groupby('GeoID').ConfirmedCases.apply(
@@ -238,9 +291,10 @@ def extract_last_features(df):
     ], dim='variable')
     X = X.to_pandas()
 
-    X.columns = ['NewCasesRM_shift1', 'NewCasesRMGrowthRM_shift1',
-                 'AccCasesRM_shift1', 'VarAccCasesRM_shift1'] + npi_diff_4_cols + \
-        ['NPISum', 'NPISum-Diff2', 'NPISum-Diff4', 'NPISum-Diff8', ] + NPI_COLS
+    X.columns = ['NewCasesRM_shift1', 'NewCasesRMGrowthRM_shift1', 'AccCasesRM_shift1',
+                 'VarAccCasesRM_shift1'] + npi_diff_4_cols + ['NPISum',
+                                                              'NPISum-Diff2',
+                                                              'NPISum-Diff4', 'NPISum-Diff8', ] + NPI_COLS
     return X
 
 
@@ -290,8 +344,8 @@ def extract_features(df):
     g_case.columns = ['NewCasesRM_shift1', 'NewCasesRMGrowthRM_shift1',
                       'AccCasesRM_shift1', 'VarAccCasesRM_shift1']
     g_npi = pd.concat(g_npi, axis=0)
-    g_npi.columns = (np.array(NPI_COLS, dtype=object) + '_Diff4').tolist() + \
-        ['NPISum', 'NPISum-Diff2', 'NPISum-Diff4', 'NPISum-Diff8']
+    g_npi.columns = (np.array(NPI_COLS, dtype=object) +
+                     '_Diff4').tolist() + ['NPISum', 'NPISum-Diff2', 'NPISum-Diff4', 'NPISum-Diff8']
 
     X = pd.concat([g_case, g_npi, npi], axis=1)  # Concat global features
     info["Feature Names"] = X.columns.tolist()
@@ -313,7 +367,5 @@ if __name__ == '__main__':
 
     sample = iterable()
     for i in range(n_fore):
-        print(sample)
         sample = iterable(15)
-    print(iterable())
     print("done!")

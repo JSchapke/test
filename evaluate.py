@@ -13,9 +13,6 @@ FORE_DATES = [
     "2020-10-01", "2020-10-07", "2020-10-14", "2020-10-21",
     "2020-11-01", "2020-11-07",  # "2020-11-14",
 ]
-FORE_DATES = [
-    "2020-11-07",  # "2020-11-14",
-]
 
 
 def evaluate(config, fore_dates=FORE_DATES, n_fore=N_FORE):
@@ -25,13 +22,8 @@ def evaluate(config, fore_dates=FORE_DATES, n_fore=N_FORE):
     mae_errors = []
 
     for fore_date in fore_dates:
-        start_date = fore_date + pd.Timedelta(days=1)
-        end_date = fore_date + pd.Timedelta(days=N_FORE)
-        dates = data.df.reset_index(level=[0, 1]).Date
-        mask = (start_date <= dates) & (dates <= end_date)
-
         fdates = pd.date_range(fore_date, periods=n_fore, freq='1d')
-        y = data.df.loc[fdates].NewCasesRM.unstack(level=0)
+        y = data.df.loc[fdates].NewCasesRM #.unstack(level=0)
 
         iterator = data.build_test_iter(fore_date, n_fore)
         sample = iterator()
@@ -40,7 +32,9 @@ def evaluate(config, fore_dates=FORE_DATES, n_fore=N_FORE):
             sample = iterator(fore)
             # Get ith sample and update df
 
-        forecast = iterator()
+        forecast = iterator(test=False)
+        print("\nForecast:", forecast)
+        print("Label:", y)
         mae_error = (forecast - y).abs().mean()
         mae_errors += [mae_error]
 
